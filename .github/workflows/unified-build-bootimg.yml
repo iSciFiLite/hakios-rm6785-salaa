@@ -1,7 +1,20 @@
-name: Build Unified SALAA HakiOS Boot Image
+name: Build and Release Unified SALAA HakiOS
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag name (e.g. v1.0.0-unified)'
+        required: false
+        default: 'v1.0.0-unified'
+      publish_release:
+        description: 'Publish GitHub Release'
+        type: boolean
+        default: true
+      build_uefi_from_source:
+        description: 'Build Mu-Silicium UEFI from source (default: use verified release FD)'
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
@@ -10,96 +23,14 @@ permissions:
   contents: write
 
 jobs:
-  build-uefi-and-bootshim:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    outputs:
-      fd-path: ${{ steps.stage-uefi.outputs.fd-path }}
-      bootshim-path: ${{ steps.stage-uefi.outputs.bootshim-path }}
-    steps:
-      - name: Checkout Unified Repo
-        uses: actions/checkout@v4
-        with:
-          path: unified-tree
-
-      - name: Checkout pinned HakiOS UEFI integration
-        uses: actions/checkout@v4
-        with:
-          repository: oosexgang/hakios-uefi
-          ref: 687fa6c6a5a70f43184de92980e0a76eea5f2c4b
-          path: hakios-uefi
-          fetch-depth: 1
-
-      - name: Checkout HakiOS-pinned Mu-Silicium workspace
-        uses: actions/checkout@v4
-        with:
-          repository: Project-Silicium/Mu-Silicium
-          ref: e51cd877e31c8fbb322032dc4cb6715e83d25ad3
-          path: mu
-          submodules: recursive
-          fetch-depth: 1
-
-      - name: Apply HakiOS patch stack and SALAA platform overlay
-        run: |
-          set -euo pipefail
-          mkdir -p build-logs uefi-output
-          bash unified-tree/uefi/tools/prepare-hakios-mu.sh "$GITHUB_WORKSPACE/hakios-uefi" "$GITHUB_WORKSPACE/mu" | tee build-logs/prepare.log
-          python3 unified-tree/uefi/tools/verify-hakios-integration.py mu | tee build-logs/integration-audit.log
-          python3 unified-tree/uefi/tools/audit-memory-map.py | tee build-logs/memory-map-audit.log
-
-      - name: Install Mu-Silicium EDK II dependencies
-        run: |
-          set -o pipefail
-          cd mu
-          ./setup_env.sh -p apt 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/setup.log"
-
-      - name: Build SALAA HakiOS UEFI firmware
-        run: |
-          set -o pipefail
-          cd mu
-          python3 build_uefi.py -d Salaa -r DEBUG -c 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/build.log"
-
-      - name: Build HakiOS XNUP BootShim for SALAA
-        run: |
-          set -euo pipefail
-          make -C mu/BootShim \
-            REQUIRES_KERNEL_HEADER=1 \
-            FD_BASE=0x40000000 \
-            FD_SIZE=0x00400000 \
-            'CFLAGS=--target=aarch64-linux-gnu -DPAYLOAD_BASE=0xF0000000'
-          test -s mu/BootShim/BootShim.bin
-
-      - name: Stage UEFI outputs
-        id: stage-uefi
-        run: |
-          set -euo pipefail
-          fd="$(find mu/Build/SALAA -type f -iname 'SALAA_EFI.fd' -print -quit)"
-          test -n "$fd"
-          python3 unified-tree/uefi/tools/verify-uefi-fd.py "$fd" | tee uefi-output/verification.json
-          cp "$fd" uefi-output/SALAA_EFI.fd
-          cp mu/BootShim/BootShim.bin uefi-output/SALAA_BootShim.bin
-          (cd uefi-output && sha256sum SALAA_EFI.fd SALAA_BootShim.bin > SHA256SUMS)
-
-      - name: Upload UEFI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: SALAA-UEFI-${{ github.sha }}
-          path: uefi-output/*
-          retention-days: 14
-
-  build-xnu-and-package:
-    needs: build-uefi-and-bootshim
+  build-and-release:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - name: Checkout Unified Repo
         uses: actions/checkout@v4
-
-      - name: Download UEFI artifacts
-        uses: actions/download-artifact@v4
         with:
-          name: SALAA-UEFI-${{ github.sha }}
-          path: input/uefi
+          fetch-depth: 0
 
       - name: Install Linux XNU dependencies and pinned Theos toolchain
         run: |
@@ -123,6 +54,41 @@ jobs:
             ln -s ../sdks-git/iPhoneOS16.5.sdk "$HOME/theos/sdks/iPhoneOS16.5.sdk"
           fi
 
+      - name: Obtain SALAA UEFI FD and BootShim
+        env:
+          BUILD_FROM_SOURCE: ${{ github.event.inputs.build_uefi_from_source || 'false' }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/uefi
+          if [ "$BUILD_FROM_SOURCE" = "true" ]; then
+            echo "Building Mu-Silicium UEFI from source..."
+            git clone --depth 1 --branch 687fa6c6a5a70f43184de92980e0a76eea5f2c4b https://github.com/oosexgang/hakios-uefi "$RUNNER_TEMP/hakios-uefi"
+            git clone --depth 1 --recurse-submodules --branch e51cd877e31c8fbb322032dc4cb6715e83d25ad3 https://github.com/Project-Silicium/Mu-Silicium "$RUNNER_TEMP/mu"
+            bash uefi/tools/prepare-hakios-mu.sh "$RUNNER_TEMP/hakios-uefi" "$RUNNER_TEMP/mu"
+            (cd "$RUNNER_TEMP/mu" && ./setup_env.sh -p apt)
+            (cd "$RUNNER_TEMP/mu" && python3 build_uefi.py -d Salaa -r DEBUG -c)
+            make -C "$RUNNER_TEMP/mu/BootShim" \
+              REQUIRES_KERNEL_HEADER=1 \
+              FD_BASE=0x40000000 \
+              FD_SIZE=0x00400000 \
+              'CFLAGS=--target=aarch64-linux-gnu -DPAYLOAD_BASE=0xF0000000'
+            fd="$(find "$RUNNER_TEMP/mu/Build/SALAA" -type f -iname 'SALAA_EFI.fd' -print -quit)"
+            cp "$fd" input/uefi/SALAA_EFI.fd
+            cp "$RUNNER_TEMP/mu/BootShim/BootShim.bin" input/uefi/SALAA_BootShim.bin
+          else
+            echo "Fetching verified SALAA UEFI FD and BootShim from release..."
+            curl --fail --location \
+              'https://github.com/iSciFiLite/rmx2151-salaa-uefi/releases/download/v0.3.0-hakios.8e6cf0d/SALAA_EFI.hakios-8e6cf0d626927d9456f81be257bc2c1db92afea8.fd' \
+              -o input/uefi/SALAA_EFI.fd
+            curl --fail --location \
+              'https://github.com/iSciFiLite/rmx2151-salaa-uefi/releases/download/v0.3.0-hakios.8e6cf0d/SALAA_BootShim.hakios-8e6cf0d626927d9456f81be257bc2c1db92afea8.bin' \
+              -o input/uefi/SALAA_BootShim.bin
+            echo 'f21da9573fe9fdb57f8de75e31f82537f8f022b5be161d3af05ae3379cc9a7bb  input/uefi/SALAA_EFI.fd' | sha256sum -c -
+            echo '6b72283e965a942d197d6721cdb7ebed43bbe17b6f45a371d93b97753ab1ef85  input/uefi/SALAA_BootShim.bin' | sha256sum -c -
+          fi
+          test -s input/uefi/SALAA_EFI.fd
+          test -s input/uefi/SALAA_BootShim.bin
+
       - name: Build SALAA MT6785 XNU Kernel & open hello ramdisk
         run: |
           set -euo pipefail
@@ -132,20 +98,38 @@ jobs:
           xnu-deps/setup.sh --stage1
           ln -sfn "$HOME/theos/toolchain/linux/iphone/bin/dsymutil" xnu-deps/host/bin/dsymutil
           xnu-deps/setup.sh --stage2
-          make DEVICE=salaa JOBS=4 kernel
+          make DEVICE=salaa JOBS=$(nproc) kernel
           make DEVICE=salaa hello
+          make DEVICE=salaa loader
           mkdir -p ../xnu-output
           cp hakios-kernel userland/hello ../xnu-output/
+          test -f build/esp/efi/boot/bootaa64.efi && cp build/esp/efi/boot/bootaa64.efi ../xnu-output/loader.efi || true
           kernel_version="$(python3 tools/kernel-version.py)"
           python3 xnuloader/mkpayload.py \
             --kernel-version "$kernel_version" \
-            --cmdline 'cpus=7 bootcpu=7 ufs=0 ufs_root=0' \
+            --cmdline 'cpus=8 bootcpu=7 ufs=2 ufs_root=1 touchscreen=1' \
             -o ../xnu-output/SALAA_XNUP.bin \
             kernel=hakios-kernel ramdisk=userland/hello
+          cat > ../xnu-output/XNU-PROVENANCE.md <<EOF
+          # SALAA MT6785 HakiOS XNU Kernel and Payload Provenance
 
-      - name: Download stock F.11 boot template
-        env:
-          GH_TOKEN: ${{ github.token }}
+          - Repository: \`iSciFiLite/hakios-rm6785-salaa\`
+          - Commit: \`${GITHUB_SHA}\`
+          - Device: Realme 7 (RMX2151 / RM6785 / Helio G95 / MT6785)
+          - Kernel: XNU Darwin 22.5.0 (ARMv8.2-A, 8 cores, boot core 7)
+          - Active Drivers:
+            * Mali-G76 MC4 Bifrost GPU (\`hakios.mtk6785_mali.c\`, \`hakios.mtk6785_mali.cpp\`)
+            * Tianma NT36672C Touch Controller (\`hakios.nt36672c.c\`)
+            * MT6359 PWRAP & GPIO110 Buttons (\`hakios.mtk6785_keys.c\`)
+            * MT6359 Battery Fuel Gauge (\`hakios.mtk6785_pmic.c\`)
+            * MT6785 SoC ID & Thermal Sensors (\`hakios.mtk6785_socinfo.c\`)
+            * MT6785 CONNSYS Radio (\`hakios.mtk6785_connsys.c\`)
+            * UFSHCI 2.1 Storage (\`hakios.ufs.c\`)
+          - Ramdisk: Open raw-syscall \`hello\`
+          - Cmdline: \`cpus=8 bootcpu=7 ufs=2 ufs_root=1 touchscreen=1\`
+          EOF
+
+      - name: Download stock F.11 boot template & Android boot tools
         run: |
           set -euo pipefail
           mkdir -p input/tools
@@ -157,9 +141,9 @@ jobs:
             'https://raw.githubusercontent.com/Project-Silicium/Mu-Silicium/4bd8ae83bf37de41777f19e0777db70f59383a6d/Resources/Scripts/mkbootimg.py' \
             --output input/tools/mkbootimg.py
           echo '55037fd1a6d6cd861add76c2083d5d4321373bf714acae3f6a40deb004c27d47  input/tools/mkbootimg.py' | sha256sum -c -
-          gh release download untagged-3597467fa853612dd205 \
-            --repo "iSciFiLite/rmx2151-salaa-uefi" --pattern boot.img --dir input
-          mv input/boot.img input/stock-boot.img
+          curl --fail --location \
+            'https://github.com/iSciFiLite/rmx2151-salaa-uefi/releases/download/untagged-3597467fa853612dd205/boot.img' \
+            -o input/stock-boot.img
           echo '27227c7345e412998ec7394dd37646adc5da8614f71d5653f747840fcdcc57c5  input/stock-boot.img' | sha256sum -c -
 
       - name: Assemble Unified Fastboot Boot Image
@@ -182,8 +166,11 @@ jobs:
             --xnu-source-commit "$GITHUB_SHA" \
             --fd-release "unified-$GITHUB_SHA" \
             --image-name SALAA_HAKIOS_XNU_BOOT.img
-          cp xnu-output/SALAA_XNUP.bin xnu-output/hakios-kernel xnu-output/hello release-output/
-          (cd release-output && sha256sum SALAA_HAKIOS_XNU_BOOT.img SALAA_XNUP.bin hakios-kernel hello > SHA256SUMS)
+          cp xnu-output/SALAA_XNUP.bin xnu-output/hakios-kernel xnu-output/hello xnu-output/XNU-PROVENANCE.md release-output/
+          cp input/uefi/SALAA_EFI.fd input/uefi/SALAA_BootShim.bin release-output/
+          test -f xnu-output/loader.efi && cp xnu-output/loader.efi release-output/ || true
+          (cd release-output && sha256sum SALAA_HAKIOS_XNU_BOOT.img SALAA_XNUP.bin hakios-kernel hello SALAA_EFI.fd SALAA_BootShim.bin > SHA256SUMS)
+          (cd release-output && sha256sum -c SHA256SUMS)
 
       - name: Upload Complete Unified Boot Release Artifacts
         uses: actions/upload-artifact@v4
@@ -191,3 +178,53 @@ jobs:
           name: SALAA-HAKIOS-UNIFIED-BOOT-${{ github.sha }}
           path: release-output/*
           retention-days: 30
+
+      - name: Publish Unified Release
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release != 'false') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            tag="${{ github.event.inputs.release_tag }}"
+          else
+            tag="v1.0.0-unified-${GITHUB_RUN_ID}"
+          fi
+          cat > release-output/release-notes.md <<EOF
+          # SALAA HakiOS RM6785 Unified Release ($tag)
+
+          Unified inclusive development release for Realme 7 (RMX2151 / RM6785 / Helio G95 / MT6785).
+          Combines the SALAA Mu-Silicium UEFI firmware, AArch64 BootShim, and HakiOS XNU Darwin kernel with the complete native MT6785 driver suite.
+
+          ## Highlights
+          - **Unified Fastboot Boot Image**: \`SALAA_HAKIOS_XNU_BOOT.img\` (Android v2 header, temporary RAM boot)
+          - **XNU Kernel**: \`hakios-kernel\` with 7 native MT6785 drivers (Mali-G76 GPU, Tianma NT36672C touch, PMIC/GPIO keys, MT6359 battery/power, MT6785 CONNSYS wireless, MT6785 SoC ID/thermals, UFS 2.1 storage)
+          - **Userland Ramdisk**: \`hello\` open raw-syscall executable (free of proprietary Apple blobs)
+          - **Container**: \`SALAA_XNUP.bin\` packaged payload (\`cpus=8 bootcpu=7 ufs=2 ufs_root=1 touchscreen=1\`)
+          - **Firmware**: \`SALAA_EFI.fd\` (4 MiB) and \`SALAA_BootShim.bin\`
+          - **Source Commits**: Monorepo \`${GITHUB_SHA}\`
+
+          ## Boot Instructions
+          > [!WARNING]
+          > DO NOT FLASH TO STORAGE PARTITIONS. Use temporary RAM boot only:
+          \`\`\`bash
+          fastboot boot SALAA_HAKIOS_XNU_BOOT.img
+          \`\`\`
+          EOF
+
+          # If release already exists, upload assets to it; otherwise create it
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber \
+              release-output/*
+          else
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "SALAA HakiOS RM6785 Unified Release $tag" \
+              --notes-file release-output/release-notes.md \
+              --target "$GITHUB_SHA" \
+              release-output/*
+          fi

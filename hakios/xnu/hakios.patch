@@ -3554,3 +3554,43 @@ index 3ebc295117a3..de101eafc83b 100755
  def find_non_ascii(s):
      for c in s:
          if ord(c) >= 0x80: return True
+diff --git a/SETUP/replacecontents/replacecontents.c b/SETUP/replacecontents/replacecontents.c
+index 5b14bc3..76e89aa 100644
+--- a/SETUP/replacecontents/replacecontents.c
++++ b/SETUP/replacecontents/replacecontents.c
+@@ -37,6 +37,35 @@
+ 
+ void usage(void);
+ 
++#if !defined(__APPLE__) && (!defined(__GLIBC__) || !defined(__GLIBC_PREREQ) || !__GLIBC_PREREQ(2, 38))
++static size_t
++strlcat(char *dst, const char *src, size_t siz)
++{
++	char *d = dst;
++	const char *s = src;
++	size_t n = siz;
++	size_t dlen;
++
++	while (n-- != 0 && *d != '\0')
++		d++;
++	dlen = d - dst;
++	n = siz - dlen;
++
++	if (n == 0)
++		return (dlen + strlen(s));
++	while (*s != '\0') {
++		if (n != 1) {
++			*d++ = *s;
++			n--;
++		}
++		s++;
++	}
++	*d = '\0';
++
++	return (dlen + (s - src));
++}
++#endif
++
+ int
+ main(int argc, char * argv[])
+ {

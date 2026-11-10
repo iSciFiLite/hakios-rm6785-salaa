@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 # HakiOS: one Makefile at the top, the way an Android tree has one. Every target is a script
 # below it; run the script itself for its options.
 #
