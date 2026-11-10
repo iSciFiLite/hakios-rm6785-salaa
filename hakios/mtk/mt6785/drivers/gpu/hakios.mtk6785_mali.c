@@ -277,4 +277,13 @@ mtk6785_mali_init(void)
 	}
 }
 
+void
+hakios_mali_init(void)
+{
+	/* Called by hakios.input.c: initialize if not already done */
+	if (reached == 0) {
+		mtk6785_mali_init();
+	}
+}
+
 STARTUP(EARLY_BOOT, STARTUP_RANK_LAST, mtk6785_mali_init);

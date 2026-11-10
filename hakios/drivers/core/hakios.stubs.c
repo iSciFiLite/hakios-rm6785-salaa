@@ -59,6 +59,9 @@ void hakios_mtk_keys_init(void) {}
 #if !defined(HAKIOS_MALI) && !defined(HAKIOS_MTK6785_MALI)
 void hakios_mali_init(void) {}
 bool hakios_mali_ready(void) { return false; }
+#endif
+
+#ifndef HAKIOS_MALI
 /* nothing keeps lines for the end of the log without it: they are only said */
 void
 hakios_keep(const char *format, ...)
