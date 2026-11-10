@@ -1,0 +1,18 @@
+## @file
+# SALAA / Realme 7 RMX2151 platform package.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = SalaaPkg
+  PACKAGE_GUID                   = 7362BA11-7F5A-4FF1-9D1C-2C9AA5C4E738
+  PACKAGE_VERSION                = 0.1
+
+[Guids]
+  gSalaaPkgTokenSpaceGuid = { 0xB6C725FE, 0x8573, 0x487C, { 0x9F, 0x67, 0xBE, 0xEA, 0x00, 0x4D, 0x20, 0xA1 } }
+
+[PcdsFixedAtBuild]
+  gSalaaPkgTokenSpaceGuid.PcdFrameBufferPixelsPerScanLine|1088|UINT32|0x00000001
+  # Live hardware DT (atag,videolfb) confirmed physical base and allocation
+  gSalaaPkgTokenSpaceGuid.PcdFrameBufferBase|0x75D30000|UINT64|0x00000002
+  gSalaaPkgTokenSpaceGuid.PcdFrameBufferSize|0x02CD0000|UINT32|0x00000003
