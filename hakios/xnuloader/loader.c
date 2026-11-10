@@ -176,10 +176,30 @@ static int screen_quiet;
  */
 static int screen_quiet_before_run;
 
+#if defined(HAKIOS_PLATFORM_MT6785)
+static inline void
+mtk_uart_putc(char c)
+{
+	volatile uint32_t *lsr = (volatile uint32_t *)0x11002014ULL;
+	volatile uint32_t *thr = (volatile uint32_t *)0x11002000ULL;
+	uint32_t timeout = 100000;
+	while (!(*lsr & 0x20) && --timeout) {
+	}
+	*thr = (uint32_t)(uint8_t)c;
+}
+#endif
+
 static void
 put_char(char c)
 {
 	char16 w[3] = { 0, 0, 0 };
+
+#if defined(HAKIOS_PLATFORM_MT6785)
+	if (c == '\n') {
+		mtk_uart_putc('\r');
+	}
+	mtk_uart_putc(c);
+#endif
 
 	if (log_len < sizeof(log_buf) - 1) {
 		log_buf[log_len++] = c;
@@ -565,7 +585,7 @@ struct platform {
 	uint64_t small_core_hz, big_core_hz;
 };
 
-static const struct platform platform_qemu_virt = {
+static const struct platform platform_qemu_virt __attribute__((unused)) = {
 	.name = "qemu-virt", .io_base = 0x08000000, .io_size = 0x08000000,
 	.gic_dist = 0x08000000, .gic_redist = 0x080A0000, .uart = 0x09000000, .psci_hvc = 1,
 	.cores = 8, .core_shift = 0,
@@ -578,7 +598,7 @@ static const struct platform platform_qemu_virt = {
 	.timeout_scale = 20,
 };
 
-static const struct platform platform_redwood = {
+static const struct platform platform_redwood __attribute__((unused)) = {
 	/* io_base must be non-zero: XNU treats a zero SoC base as "no SoC" and skips clock setup. */
 	.name = "redwood", .io_base = 0x00400000, .io_size = 0x3FC00000,
 	.gic_dist = 0x17A00000, .gic_redist = 0x17A60000, .uart = 0, .ufs_hc_pa = 0x01d84000,
@@ -599,7 +619,7 @@ static const struct platform platform_redwood = {
  * the UEFI's responsibility. Keep GPU and touch initialization in their own drivers. */
 static const struct platform platform_mt6785 = {
 	.name = "mt6785", .io_base = 0x08000000, .io_size = 0x10000000,
-	.gic_dist = 0x0c000000, .gic_redist = 0x0c040000, .uart = 0,
+	.gic_dist = 0x0c000000, .gic_redist = 0x0c040000, .uart = 0x11002000ULL,
 	.ufs_hc_pa = 0x11270000, .log_other_cpu = 1,
 	.cores = 8, .core_shift = 8,
 	.small_cores = 0x3f,
@@ -2114,10 +2134,12 @@ block_io2_probe(efi_handle h, efi_block_io *bio)
 		}
 	}
 	t0 = READ_SYSREG(CNTVCT_EL0);
+	uint8_t *bb = block_buffer;
+	__asm__ volatile ("" : "+r" (bb));
 	for (int i = 0; i < 8; i++) {
 		/* other places than the synchronous reads, so that nothing the storage kept is read again */
 		s = bio2->read_blocks_ex(bio2, bio2->media->media_id, (uint64_t)i * (64ULL << 20) / bs + 1031,
-		    &tokens[i], bs, block_buffer + 1048576 + i * 65536);
+		    &tokens[i], bs, bb + 1048576 + i * 65536);
 		if (EFI_ERROR(s)) {
 			print("ufs: probe: ReadBlocksEx %d failed %x\n", (uint64_t)i, s);
 			return;
@@ -3458,7 +3480,11 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
 	if (plat->uart != 0) {
 		dt_begin(&w, "uart0");
 		dt_prop_str(&w, "device_type", "uart");
+#if defined(HAKIOS_PLATFORM_MT6785)
+		dt_prop_str(&w, "compatible", "mediatek,mt6577-uart");
+#else
 		dt_prop_str(&w, "compatible", "arm,pl011");
+#endif
 		reg2[0] = plat->uart - plat->io_base;
 		reg2[1] = 0x1000;
 		dt_prop(&w, "reg", reg2, sizeof(reg2));
@@ -4108,12 +4134,13 @@ usb_command_loop(void)
 #define FW_CFG_DMA_SELECT 0x08
 #define FW_CFG_DMA_WRITE  0x10
 
-static uint32_t
+static uint32_t __attribute__((unused))
 be32(uint32_t v)
 {
 	return __builtin_bswap32(v);
 }
 
+#if !defined(HAKIOS_PLATFORM_MT6785)
 static void
 fw_cfg_read(void *buf, uint32_t len)
 {
@@ -4184,6 +4211,7 @@ ramfb_phone_screen(void)
 	SCREEN.height = PHONE_HEIGHT;
 	SCREEN.stride = PHONE_WIDTH * 4;
 }
+#endif
 
 /*
  * UEFI-native boot: a payload from the volume the loader was started from.
@@ -4384,7 +4412,9 @@ efi_main(efi_handle image, efi_system_table *st)
 			ramfb_phone_screen();
 #endif
 		}
-		print("display %d x %d at %x\n", (uint64_t)SCREEN.width, (uint64_t)SCREEN.height, SCREEN.base);
+		print("display %d x %d (stride %d bytes, %d px/line) at %x\n",
+		    (uint64_t)SCREEN.width, (uint64_t)SCREEN.height, (uint64_t)SCREEN.stride,
+		    (uint64_t)GOP->mode->info->pixels_per_scanline, SCREEN.base);
 	}
 	print("platform %s\n", PLAT->name);
 

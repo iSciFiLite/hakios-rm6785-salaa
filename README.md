@@ -37,10 +37,11 @@ By uniting both components in this repository:
 |---|---|---|
 | **Platform Skeleton** | ✅ Complete | AArch64 SEC/DXE, board package `SalaaPkg`, BDS, Shell. Builds cleanly against pinned Mu-Silicium. |
 | **Physical Memory Map** | ✅ Complete | 8 GiB RAM span (`0x40000000–0x240000000`), 28 non-overlapping descriptors. `0xF0000000–0xF3FFFFFF` (64 MiB) carved out for XNUP handoff. |
-| **GOP Display / Stride** | ✅ Complete | Physical framebuffer at `0x75d30000` (length `0x02cd0000`, 46,989,312 bytes). Stride fixed to **1088 pixels per scan line** (virtual size `1088,9600`) matching rooted handset `fb0` & `atag,videolfb` logs. |
-| **UART Serial Port** | ✅ Complete (Code) | `MT6785SerialPortLib` at `0x11002000`, MTK high-speed mode 3, 115200-8N1 from 26 MHz source clock. |
-| **UFS Storage** | ⚠️ Probe Stub | MMIO controller probe at `0x11270000`. Correctly decodes HCS bits (`DP=bit0`, `UCRDY=bit3`). Reports `EFI_NO_MEDIA` until PHY/link init and LUN discovery are implemented. |
-| **PSCI / Multiprocessor** | ✅ Declared | 6+2 core affinity map (6× A55 @ 1.7 GHz + 2× A76 @ 2.17 GHz). Boot core 7; SMC conduit declared. |
+| **GOP Display / Stride** | ✅ Complete | Physical framebuffer at `0x75d30000` (length `0x02cd0000`, 46,989,312 bytes). Stride fixed to **1088 pixels per scan line** (virtual size `1088,9600`) matching rooted handset `fb0` & `atag,videolfb` logs. Forwarded to XNU `Boot_Video` with exact rowBytes (`4352`). |
+| **UART Serial Port** | ✅ Complete | `MT6785SerialPortLib` at `0x11002000`, MTK high-speed mode 3, 115200-8N1 from 26 MHz clock. In `xnuloader`, direct MMIO serial output streams early log text, and DeviceTree exports `mediatek,mt6577-uart`. |
+| **UFS Storage** | ⚠️ Probe Verified | MMIO controller probe at `0x11270000`. Correctly decodes HCS bits (`DP=bit0`, `UTRLRDY=bit1`, `UTMRLRDY=bit2`, `UCRDY=bit3`), `VER=0x00000210`, `MTK_HW_VER=0x2240`. Smoke boot uses `ufs=0 ufs_root=0` to ensure no block stalls. |
+| **PSCI / Multiprocessor** | ✅ Complete | 6+2 core affinity map (6× A55 @ 1.7 GHz + 2× A76 @ 2.17 GHz). Boot core 7; SMC conduit declared and integrated into `xnuloader`. |
+| **XnuLoader (EFI App)** | ✅ Complete | AArch64 standalone UEFI application (`loader.efi`, 65,536 bytes) compiled for MT6785 with zero errors/warnings. Sets MT6785 MMIO base, UART0, 1088 stride, and PSCI. |
 | **XNU Kernel (MT6785)** | ✅ Complete | ARMv8.2-A+crypto+rcpc compilation clean via pinned Theos LLVM toolchain + iPhoneOS 16.5 SDK. Produces `mach_kernel` / `hakios-kernel`. |
 | **XNUP Payload Container** | ✅ Complete | Packaged via `xnuloader/mkpayload.py` containing `hakios-kernel` + open `hello` ramdisk with cmdline `cpus=7 bootcpu=7 ufs=0 ufs_root=0`. |
 | **Combined Fastboot Image** | ✅ Packaged | Android v2 boot image (`SALAA_HAKIOS_XNU_BOOT.img`, 7,464,960 bytes, SHA-256 `b4bf5a1081cd2155a21c0345a22921bbe815e561f9c0fd1e6632d9d5cff611d3`). Combines `gzip(BootShim + SALAA_EFI.fd + SALAA_XNUP.bin)` with verified F.11 ramdisk and DTB. |
