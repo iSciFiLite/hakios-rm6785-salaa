@@ -50,8 +50,42 @@ By uniting both components in this repository:
 | **XnuLoader (EFI App)** | ✅ Complete | AArch64 standalone UEFI application (`loader.efi`, 65,536 bytes) compiled for MT6785 with zero errors/warnings. Sets MT6785 MMIO base, UART0, 1088 stride, and PSCI. |
 | **XNU Kernel (MT6785)** | ✅ Complete | ARMv8.2-A+crypto+rcpc compilation clean via pinned Theos LLVM toolchain + iPhoneOS 16.5 SDK. All 7 MT6785 drivers enabled in `salaa_defconfig`. |
 | **XNUP Payload Container** | ✅ Complete | Packaged via `xnuloader/mkpayload.py` containing `hakios-kernel` + open `hello` ramdisk. |
-| **Combined Fastboot Image** | ✅ Packaged | Android v2 boot image (`SALAA_HAKIOS_XNU_BOOT.img`, 7,464,960 bytes, SHA-256 `b4bf5a1081cd2155a21c0345a22921bbe815e561f9c0fd1e6632d9d5cff611d3`). Combines `gzip(BootShim + SALAA_EFI.fd + SALAA_XNUP.bin)` with verified F.11 ramdisk and DTB. |
-| **Hardware Boot Test** | ❌ Gating Next Step | Requires one controlled `fastboot boot SALAA_HAKIOS_XNU_BOOT.img` from an external USB host on an unlocked bootloader. |
+| **Combined Fastboot Image** | ✅ Released | Official Android v2 boot image (`SALAA_HAKIOS_XNU_BOOT.img`, 7,467,008 bytes, SHA-256 `888d795fc66ae30da7753646785cac17623c4cbc1b3c077307d6da0583c5a319`). Combines `gzip(BootShim + SALAA_EFI.fd + SALAA_XNUP.bin)` with verified F.11 ramdisk and DTB built fully on GitHub Actions. |
+| **Hardware Boot Test** | ⏳ Gating Next Step | Requires one controlled `fastboot boot SALAA_HAKIOS_XNU_BOOT.img` from an external USB host on an unlocked bootloader. |
+
+---
+
+## Official GitHub Actions Release (v1.0.0-unified)
+
+All compilation and release packaging were executed entirely on hosted GitHub Actions runners (Run [#42868399668](https://github.com/iSciFiLite/hakios-rm6785-salaa/actions/runs/42868399668)), with zero local host builds.
+
+📦 **Official Release**: [**v1.0.0-unified**](https://github.com/iSciFiLite/hakios-rm6785-salaa/releases/tag/v1.0.0-unified)
+
+### Published Release Artifacts
+
+| Artifact | Size | SHA-256 Checksum | Description |
+|---|---|---|---|
+| `SALAA_HAKIOS_XNU_BOOT.img` | 7,467,008 B | `888d795fc66ae30da7753646785cac17623c4cbc1b3c077307d6da0583c5a319` | Unified Android v2 fastboot boot image for temporary RAM boot |
+| `SALAA_XNUP.bin` | 14,921,728 B | `0da449f06b80c5111a0e9d531a0124f05daea8db263d3d92286e81582410b882` | XNUP container packaging MT6785 XNU kernel + open hello ramdisk |
+| `hakios-kernel` | 14,904,704 B | `8dcc148b9458a32c3074af1ef59230cd63a5f81ee72aba0d3b1cd24c63e6b859` | AArch64 XNU Darwin 22.5.0 kernel with 7 native MT6785 drivers |
+| `hello` | 16,528 B | `16ff0b05dd5ea107523d73640e9b3592944ec57f768e7ba74d923dcb47c77fd4` | Raw-syscall freestanding ramdisk userland (zero Apple binaries) |
+| `loader.efi` | 65,024 B | `98aa8d2bce4e8a59962d43e2fa95c86a529bd8d28cc9d1b561be5e8ad67571dd` | Standalone AArch64 UEFI boot application for MT6785 SoC |
+| `SALAA_EFI.fd` | 4,194,304 B | `f21da9573fe9fdb57f8de75e31f82537f8f022b5be161d3af05ae3379cc9a7bb` | 4 MiB SALAA Mu-Silicium UEFI firmware volume (1088-stride GOP) |
+| `SALAA_BootShim.bin` | 176 B | `6b72283e965a942d197d6721cdb7ebed43bbe17b6f45a371d93b97753ab1ef85` | AArch64 assembly BootShim mapping LK handoff to `0x40000000` |
+| `SHA256SUMS` | 566 B | `3d4437697f5c5e4b9b4a1f72211243377771e1c7414df63bbbb413723a1a6a62` | Cryptographic checksum manifest for all release binaries |
+| `verification.json` | 995 B | `2e60240f13d318ccdc67ae1d2a974fb8136aa221cf661955b9e599e3ca15b88c` | JSON metadata detailing stock hashes, load offsets, and payload |
+| `PROVENANCE.md` | 921 B | `4518787f1c75e7f6b8b7c2ffb989861dd83ba7ae74457e4e08cfbc1f56ecbb09` | Source commit, build environment, and toolchain provenance |
+| `XNU-PROVENANCE.md` | 810 B | `4708319dcce5b64b0e73195c2bc42ea62d2946ceba48c5b96792caea680e9eb9` | Specific XNU driver list and config arguments |
+
+### Downloading & Verifying Release Assets
+
+```bash
+# Download all assets from GitHub
+gh release download v1.0.0-unified --repo iSciFiLite/hakios-rm6785-salaa
+
+# Verify cryptographic integrity
+sha256sum -c SHA256SUMS
+```
 
 ---
 

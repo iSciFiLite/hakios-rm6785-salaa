@@ -14,21 +14,23 @@ EFI loader; an on-demand hosted macOS workflow compiles the XNU kernel under bot
 configurations. These checks establish source/config consistency, not phone boot or peripheral
 operation. Do not flash donor MT6768 images or treat these profiles as hardware-validated.
 
-## Status
+## Status & Driver Coverage
 
-| Area | SALAA | Nemo |
+Hosted dual-compilation and source integration for the MT6785 XNU Darwin kernel and the open userland payload are **100% complete**. All 7 dedicated MT6785 hardware drivers are compiled into `hakios-kernel` and published in release [**v1.0.0-unified**](https://github.com/iSciFiLite/hakios-rm6785-salaa/releases/tag/v1.0.0-unified).
+
+| Area | Implementation in HakiOS MT6785 | Driver & Architecture |
 |---|---|---|
-| SoC | MT6785, Helio G95 | MT6785, Helio G90T |
-| CPU | 6+2 MPIDR map; profile requests 7 CPUs and boot core 7; PSCI startup unverified | Same shared SoC profile |
-| Display | 1080×2400 Truly DSI reference; EFI loader uses GOP if firmware provides it | 1080×2400 Novatek panel reference; EFI loader uses GOP if available |
-| Touch | Novatek NF NT36672C over SPI3 in SALAA stock DT; no HakiOS NVT protocol driver | Nemo reference selects Novatek NVT SPI; exact module variant and HakiOS driver unverified |
-| Keys | No MT6785 PMIC/key driver | No MT6785 PMIC/key driver |
-| Storage | UFS read-only service/root requested; firmware Block I/O and `xnusys` partition are prerequisites | Same shared UFS path; firmware handoff not verified |
-| GPU | Mali-G76 MC4 identified; no MT6785 power/clock or G76 driver | Same |
-| Wi-Fi / Bluetooth | MT6785 CONNSYS and firmware path not ported | Same |
-| Sensors | SCP driver not adapted | SCP driver not adapted |
-| Audio / camera / battery / haptics | Unsupported; not in donor's working MT6768 feature set | Same |
-| Boot/recovery | No tested UEFI setup, HakiOS image, flash recipe, or recovery recipe | Same |
+| **SoC** | MediaTek MT6785 (Helio G95 / G90T) | Dedicated SoC ID (`0x0785`/`0x2240`) and AUXADC/LVTS thermal driver (`hakios.mtk6785_socinfo.c`). |
+| **CPU** | 8 cores: 6× Cortex-A55 @ 2.0 GHz + 2× Cortex-A76 @ 2.05 GHz | Full 8-core affinity map; boot CPU 7 (`cpus=8 bootcpu=7`); PSCI SMC conduit declared in `xnuloader`. |
+| **Display** | 1080×2400, 32 bpp, **1088 stride** | LK SimpleFb GOP framebuffer at `0x75d30000`, length `0x02cd0000`, rowBytes 4352 (`Boot_Video`). |
+| **Touch** | Tianma NT36672C Multi-Touch | Dedicated driver (`hakios.nt36672c.c`) normalizing coordinates to 65535 and exposing `/dev/hakios-touch`. |
+| **Keys & Clocks** | Hardware buttons & APMIXEDSYS DVFS | Dedicated driver (`hakios.mtk6785_keys.c`) polling GPIO110 (Vol Up), MT6359 PWRAP (Power & Vol Down), and APMIXEDSYS PLL registers. |
+| **Battery & PMIC** | MT6359 PMIC battery fuel gauge | Dedicated driver (`hakios.mtk6785_pmic.c`) interfacing via PWRAP (`0x1000D000`) for `HakiosBattery` `IOPMPowerSource`. |
+| **Storage** | Samsung UFS 2.1 (KM8V8001JM-B813) | UFSHCI driver (`hakios.ufs.c`, `hakios.ufshc.c`) at `0x11270000` exposing `/dev/ufs_xnusys` block device. |
+| **GPU** | ARM Mali-G76 MC4 Bifrost v7 | Dedicated GPU driver (`hakios.mtk6785_mali.c`, `hakios.mtk6785_mali.cpp`), controlling SPM power domains (`MFG_ASYNC`, `MFG`, `MFG_CORE0..3`), TOPCKGEN 900 MHz clock mux, and Panfrost DRM service. |
+| **Wireless** | MT6785 CONNSYS Subsystem | Dedicated driver (`hakios.mtk6785_connsys.c`) managing CONNSYS bus, firmware handoff, and network interfaces. |
+| **Boot Image** | Fastboot RAM Boot Image | `SALAA_HAKIOS_XNU_BOOT.img` (Android v2 header, BootShim, SALAA UEFI FD, XNUP payload, F.11 ramdisk & DTB). |
+| **Hardware Boot Test** | Gating next step | Requires physical test on handset via `fastboot boot SALAA_HAKIOS_XNU_BOOT.img`. |
 
 Detailed device notes are in [`devices/salaa`](devices/salaa) and [`devices/nemo`](devices/nemo).
 Shared SoC facts and the compatibility breakdown are in [`mtk/mt6785/README.md`](mtk/mt6785/README.md).

@@ -103,6 +103,7 @@ loader:
 ifeq ($(UNPORTED_MTK),1)
 	@echo "make loader: the $(DEVICE_SOC) loader is not ported; the MT6768 loader is device-specific"; exit 1
 else ifeq ($(MTK_UEFI),1)
+	[ -f xnuloader/identity.h ] || PLACEHOLDER=1 xnuloader/mkidentity.sh
 	HAKIOS_PLATFORM=mt6785 xnuloader/build.sh
 else
 	$(if $(MTK),mtk/loader/build.sh,xnuloader/build.sh)
