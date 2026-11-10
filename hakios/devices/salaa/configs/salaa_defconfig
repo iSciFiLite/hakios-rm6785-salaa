@@ -1,0 +1,5 @@
+# HakiOS Realme 7 profile: shared defaults, MT6785 bring-up, and board-specific facts.
+#include common_defconfig
+#include open.config
+#include mt6785.config
+#include salaa.config

@@ -1,0 +1,31 @@
+name: MT6785 kernel source build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mt6785-kernels:
+    # XNU's documented host path uses Apple's cctools and SDK on macOS.
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select initial MT6785 configuration for XNU overlay setup
+        run: make DEVICE=salaa salaa_defconfig
+      - name: Prepare pinned XNU, SDK, and open-source dependencies
+        run: |
+          xnu/apply.sh
+          xnu-deps/setup.sh --stage1
+          xnu-deps/setup.sh --stage2
+      - name: Build both device profiles against the shared MT6785 source
+        run: |
+          set -euo pipefail
+          for device in salaa nemo; do
+            make "DEVICE=${device}" "${device}_defconfig"
+            make "DEVICE=${device}" JOBS=3 kernel
+            test -s hakios-kernel
+            shasum -a 256 hakios-kernel
+          done

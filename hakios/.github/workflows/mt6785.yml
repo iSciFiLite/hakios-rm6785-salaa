@@ -1,0 +1,48 @@
+name: MT6785 source validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profiles-and-loader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install EFI cross-linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang lld
+      - name: Validate both device profiles
+        run: |
+          python3 tools/hakios-device.py check salaa nemo
+          for device in salaa nemo; do
+            config="${RUNNER_TEMP}/${device}.config"
+            python3 tools/hakios-config.py defconfig "${device}" --output "${config}"
+            python3 tools/hakios-config.py check --config "${config}"
+            python3 tools/hakios-config.py args --config "${config}"
+          done
+      - name: Validate source metadata and documentation
+        run: |
+          python3 tools/boot-args.py --check
+          python3 tools/drivers-check.py
+          python3 tools/docs-check.py
+      - name: Compile the MT6785 EFI loader on the runner
+        run: |
+          bash xnuloader/mkidentity.sh --placeholder
+          HAKIOS_PLATFORM=mt6785 bash xnuloader/build.sh
+      - name: Upload ephemeral EFI build for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnuloader-mt6785-efi
+          path: xnuloader/loader.efi
+          if-no-files-found: error
+          retention-days: 7
