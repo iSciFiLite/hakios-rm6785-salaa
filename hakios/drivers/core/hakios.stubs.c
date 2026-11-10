@@ -56,7 +56,7 @@ void hakios_tcm_init(void) {}
 void hakios_mtk_keys_init(void) {}
 #endif
 
-#ifndef HAKIOS_MALI
+#if !defined(HAKIOS_MALI) && !defined(HAKIOS_MTK6785_MALI)
 void hakios_mali_init(void) {}
 bool hakios_mali_ready(void) { return false; }
 /* nothing keeps lines for the end of the log without it: they are only said */

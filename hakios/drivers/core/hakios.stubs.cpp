@@ -13,7 +13,7 @@ MiniIOSurfaceDrawn(MiniIOSurface * surface, uint64_t milliseconds)
 }
 #endif
 
-#ifndef HAKIOS_MALI
+#if !defined(HAKIOS_MALI) && !defined(HAKIOS_MTK6785_MALI)
 /* no Mali: none of its jobs draws into a surface */
 bool
 hakios_mali_surface_drawn(__unused MiniIOSurface * surface, __unused uint64_t milliseconds)
