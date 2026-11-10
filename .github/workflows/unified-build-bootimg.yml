@@ -103,7 +103,7 @@ jobs:
           PLACEHOLDER=1 xnuloader/mkidentity.sh
           HAKIOS_PLATFORM=mt6785 xnuloader/build.sh
           mkdir -p ../xnu-output
-          cp hakios-kernel userland/hello loader.efi ../xnu-output/
+          cp hakios-kernel userland/hello xnuloader/loader.efi ../xnu-output/
           kernel_version="$(python3 tools/kernel-version.py)"
           python3 xnuloader/mkpayload.py \
             --kernel-version "$kernel_version" \
