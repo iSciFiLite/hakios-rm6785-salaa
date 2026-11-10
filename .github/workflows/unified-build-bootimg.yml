@@ -100,10 +100,10 @@ jobs:
           xnu-deps/setup.sh --stage2
           make DEVICE=salaa JOBS=$(nproc) kernel
           make DEVICE=salaa hello
-          make DEVICE=salaa loader
+          PLACEHOLDER=1 xnuloader/mkidentity.sh
+          HAKIOS_PLATFORM=mt6785 xnuloader/build.sh
           mkdir -p ../xnu-output
-          cp hakios-kernel userland/hello ../xnu-output/
-          test -f build/esp/efi/boot/bootaa64.efi && cp build/esp/efi/boot/bootaa64.efi ../xnu-output/loader.efi || true
+          cp hakios-kernel userland/hello loader.efi ../xnu-output/
           kernel_version="$(python3 tools/kernel-version.py)"
           python3 xnuloader/mkpayload.py \
             --kernel-version "$kernel_version" \
@@ -168,8 +168,8 @@ jobs:
             --image-name SALAA_HAKIOS_XNU_BOOT.img
           cp xnu-output/SALAA_XNUP.bin xnu-output/hakios-kernel xnu-output/hello xnu-output/XNU-PROVENANCE.md release-output/
           cp input/uefi/SALAA_EFI.fd input/uefi/SALAA_BootShim.bin release-output/
-          test -f xnu-output/loader.efi && cp xnu-output/loader.efi release-output/ || true
-          (cd release-output && sha256sum SALAA_HAKIOS_XNU_BOOT.img SALAA_XNUP.bin hakios-kernel hello SALAA_EFI.fd SALAA_BootShim.bin > SHA256SUMS)
+          cp xnu-output/loader.efi release-output/
+          (cd release-output && sha256sum SALAA_HAKIOS_XNU_BOOT.img SALAA_XNUP.bin hakios-kernel hello loader.efi SALAA_EFI.fd SALAA_BootShim.bin > SHA256SUMS)
           (cd release-output && sha256sum -c SHA256SUMS)
 
       - name: Upload Complete Unified Boot Release Artifacts
