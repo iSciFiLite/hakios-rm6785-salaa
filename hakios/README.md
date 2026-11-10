@@ -1,5 +1,8 @@
 # HakiOS MT6785 — SALAA and Nemo
 
+> [!NOTE]
+> **Inclusive Development Active**: This component is developed in lockstep with the SALAA UEFI firmware and BootShim in the unified inclusive repository: [**iSciFiLite/hakios-rm6785-salaa**](https://github.com/iSciFiLite/hakios-rm6785-salaa). All cross-layer enhancements, shared memory map definitions, and unified fastboot boot image packaging are authored atomically there. Standalone repositories are synchronized at release milestones via `tools/split-subtrees.sh`.
+
 An experimental HakiOS port for the Realme 7 (RMX2151, SALAA; Helio G95) and Realme 6 (RMX2001,
 Nemo; Helio G90T). It reuses HakiOS's MediaTek/XNU integration while maintaining separate board
 profiles.
