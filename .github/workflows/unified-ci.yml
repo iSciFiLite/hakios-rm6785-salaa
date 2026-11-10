@@ -1,0 +1,28 @@
+name: HakiOS RM6785 SALAA Unified CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Unified Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Unified Audit and Validation
+        run: |
+          set -euo pipefail
+          make audit

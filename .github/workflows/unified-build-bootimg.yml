@@ -1,0 +1,193 @@
+name: Build Unified SALAA HakiOS Boot Image
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-uefi-and-bootshim:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    outputs:
+      fd-path: ${{ steps.stage-uefi.outputs.fd-path }}
+      bootshim-path: ${{ steps.stage-uefi.outputs.bootshim-path }}
+    steps:
+      - name: Checkout Unified Repo
+        uses: actions/checkout@v4
+        with:
+          path: unified-tree
+
+      - name: Checkout pinned HakiOS UEFI integration
+        uses: actions/checkout@v4
+        with:
+          repository: oosexgang/hakios-uefi
+          ref: 687fa6c6a5a70f43184de92980e0a76eea5f2c4b
+          path: hakios-uefi
+          fetch-depth: 1
+
+      - name: Checkout HakiOS-pinned Mu-Silicium workspace
+        uses: actions/checkout@v4
+        with:
+          repository: Project-Silicium/Mu-Silicium
+          ref: e51cd877e31c8fbb322032dc4cb6715e83d25ad3
+          path: mu
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Apply HakiOS patch stack and SALAA platform overlay
+        run: |
+          set -euo pipefail
+          mkdir -p build-logs uefi-output
+          bash unified-tree/uefi/tools/prepare-hakios-mu.sh "$GITHUB_WORKSPACE/hakios-uefi" "$GITHUB_WORKSPACE/mu" | tee build-logs/prepare.log
+          python3 unified-tree/uefi/tools/verify-hakios-integration.py mu | tee build-logs/integration-audit.log
+          python3 unified-tree/uefi/tools/audit-memory-map.py | tee build-logs/memory-map-audit.log
+
+      - name: Install Mu-Silicium EDK II dependencies
+        run: |
+          set -o pipefail
+          cd mu
+          ./setup_env.sh -p apt 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/setup.log"
+
+      - name: Build SALAA HakiOS UEFI firmware
+        run: |
+          set -o pipefail
+          cd mu
+          python3 build_uefi.py -d Salaa -r DEBUG -c 2>&1 | tee "$GITHUB_WORKSPACE/build-logs/build.log"
+
+      - name: Build HakiOS XNUP BootShim for SALAA
+        run: |
+          set -euo pipefail
+          make -C mu/BootShim \
+            REQUIRES_KERNEL_HEADER=1 \
+            FD_BASE=0x40000000 \
+            FD_SIZE=0x00400000 \
+            'CFLAGS=--target=aarch64-linux-gnu -DPAYLOAD_BASE=0xF0000000'
+          test -s mu/BootShim/BootShim.bin
+
+      - name: Stage UEFI outputs
+        id: stage-uefi
+        run: |
+          set -euo pipefail
+          fd="$(find mu/Build/SALAA -type f -iname 'SALAA_EFI.fd' -print -quit)"
+          test -n "$fd"
+          python3 unified-tree/uefi/tools/verify-uefi-fd.py "$fd" | tee uefi-output/verification.json
+          cp "$fd" uefi-output/SALAA_EFI.fd
+          cp mu/BootShim/BootShim.bin uefi-output/SALAA_BootShim.bin
+          (cd uefi-output && sha256sum SALAA_EFI.fd SALAA_BootShim.bin > SHA256SUMS)
+
+      - name: Upload UEFI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SALAA-UEFI-${{ github.sha }}
+          path: uefi-output/*
+          retention-days: 14
+
+  build-xnu-and-package:
+    needs: build-uefi-and-bootshim
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Unified Repo
+        uses: actions/checkout@v4
+
+      - name: Download UEFI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: SALAA-UEFI-${{ github.sha }}
+          path: input/uefi
+
+      - name: Install Linux XNU dependencies and pinned Theos toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes autoconf automake bison build-essential clang curl flex git libtinfo6 lld m4 make perl python3 uuid-dev xz-utils
+          mkdir -p "$HOME/theos/toolchain"
+          curl --fail --location --retry 3 \
+            'https://github.com/L1ghtmann/llvm-project/releases/download/test-210562a/iOSToolchain-x86_64.tar.xz' \
+            --output "$RUNNER_TEMP/iOSToolchain-x86_64.tar.xz"
+          echo 'a72a7a577e2fbe2838b6b5e9c72034fa7d114af96f0e1d4b016f18730ce4056e  '"$RUNNER_TEMP/iOSToolchain-x86_64.tar.xz" | sha256sum --check -
+          tar -xJf "$RUNNER_TEMP/iOSToolchain-x86_64.tar.xz" -C "$HOME/theos/toolchain"
+          if [ ! -d "$HOME/theos/sdks/iPhoneOS16.5.sdk" ]; then
+            git init "$HOME/theos/sdks-git"
+            git -C "$HOME/theos/sdks-git" remote add origin https://github.com/theos/sdks.git
+            git -C "$HOME/theos/sdks-git" sparse-checkout init --cone
+            git -C "$HOME/theos/sdks-git" sparse-checkout set iPhoneOS16.5.sdk
+            git -C "$HOME/theos/sdks-git" fetch --depth 1 origin 0222fd5413cf4b9af096f37b4621afa2688572f7
+            git -C "$HOME/theos/sdks-git" checkout --detach FETCH_HEAD
+            mkdir -p "$HOME/theos/sdks"
+            ln -s ../sdks-git/iPhoneOS16.5.sdk "$HOME/theos/sdks/iPhoneOS16.5.sdk"
+          fi
+
+      - name: Build SALAA MT6785 XNU Kernel & open hello ramdisk
+        run: |
+          set -euo pipefail
+          cd hakios
+          make DEVICE=salaa salaa_defconfig
+          xnu/apply.sh
+          xnu-deps/setup.sh --stage1
+          ln -sfn "$HOME/theos/toolchain/linux/iphone/bin/dsymutil" xnu-deps/host/bin/dsymutil
+          xnu-deps/setup.sh --stage2
+          make DEVICE=salaa JOBS=4 kernel
+          make DEVICE=salaa hello
+          mkdir -p ../xnu-output
+          cp hakios-kernel userland/hello ../xnu-output/
+          kernel_version="$(python3 tools/kernel-version.py)"
+          python3 xnuloader/mkpayload.py \
+            --kernel-version "$kernel_version" \
+            --cmdline 'cpus=7 bootcpu=7 ufs=0 ufs_root=0' \
+            -o ../xnu-output/SALAA_XNUP.bin \
+            kernel=hakios-kernel ramdisk=userland/hello
+
+      - name: Download stock F.11 boot template
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/tools
+          curl --fail --location \
+            'https://android.googlesource.com/platform/system/tools/mkbootimg/+/d2bb0af5ba6d3198a3e99529c97eda1be0b5a093/unpack_bootimg.py?format=TEXT' \
+            | base64 -d > input/tools/unpack_bootimg.py
+          echo 'a9d260978a63bd06a24b6347e7dee8a28ff96639793caea15dff6aa491316308  input/tools/unpack_bootimg.py' | sha256sum -c -
+          curl --fail --location \
+            'https://raw.githubusercontent.com/Project-Silicium/Mu-Silicium/4bd8ae83bf37de41777f19e0777db70f59383a6d/Resources/Scripts/mkbootimg.py' \
+            --output input/tools/mkbootimg.py
+          echo '55037fd1a6d6cd861add76c2083d5d4321373bf714acae3f6a40deb004c27d47  input/tools/mkbootimg.py' | sha256sum -c -
+          gh release download untagged-3597467fa853612dd205 \
+            --repo "iSciFiLite/rmx2151-salaa-uefi" --pattern boot.img --dir input
+          mv input/boot.img input/stock-boot.img
+          echo '27227c7345e412998ec7394dd37646adc5da8614f71d5653f747840fcdcc57c5  input/stock-boot.img' | sha256sum -c -
+
+      - name: Assemble Unified Fastboot Boot Image
+        run: |
+          set -euo pipefail
+          mkdir -p release-output
+          fd_sha="$(sha256sum input/uefi/SALAA_EFI.fd | awk '{print $1}')"
+          shim_sha="$(sha256sum input/uefi/SALAA_BootShim.bin | awk '{print $1}')"
+          python3 uefi/tools/pack-salaa-bootimg.py \
+            --stock-boot input/stock-boot.img \
+            --fd input/uefi/SALAA_EFI.fd \
+            --shim input/uefi/SALAA_BootShim.bin \
+            --xnup xnu-output/SALAA_XNUP.bin \
+            --fd-sha256 "$fd_sha" \
+            --shim-sha256 "$shim_sha" \
+            --unpack-bootimg input/tools/unpack_bootimg.py \
+            --mkbootimg input/tools/mkbootimg.py \
+            --out-dir release-output \
+            --source-commit "$GITHUB_SHA" \
+            --xnu-source-commit "$GITHUB_SHA" \
+            --fd-release "unified-$GITHUB_SHA" \
+            --image-name SALAA_HAKIOS_XNU_BOOT.img
+          cp xnu-output/SALAA_XNUP.bin xnu-output/hakios-kernel xnu-output/hello release-output/
+          (cd release-output && sha256sum SALAA_HAKIOS_XNU_BOOT.img SALAA_XNUP.bin hakios-kernel hello > SHA256SUMS)
+
+      - name: Upload Complete Unified Boot Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SALAA-HAKIOS-UNIFIED-BOOT-${{ github.sha }}
+          path: release-output/*
+          retention-days: 30
