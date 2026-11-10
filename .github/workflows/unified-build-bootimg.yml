@@ -143,8 +143,8 @@ jobs:
             'https://raw.githubusercontent.com/Project-Silicium/Mu-Silicium/4bd8ae83bf37de41777f19e0777db70f59383a6d/Resources/Scripts/mkbootimg.py' \
             --output input/tools/mkbootimg.py
           echo '55037fd1a6d6cd861add76c2083d5d4321373bf714acae3f6a40deb004c27d47  input/tools/mkbootimg.py' | sha256sum -c -
-          gh release download untagged-3597467fa853612dd205 \
-            --repo "iSciFiLite/rmx2151-salaa-uefi" --pattern boot.img --dir input
+          gh release download salaa-f11-bootimg-input \
+            --repo "$GITHUB_REPOSITORY" --pattern boot.img --dir input
           mv input/boot.img input/stock-boot.img
           echo '27227c7345e412998ec7394dd37646adc5da8614f71d5653f747840fcdcc57c5  input/stock-boot.img' | sha256sum -c -
 
