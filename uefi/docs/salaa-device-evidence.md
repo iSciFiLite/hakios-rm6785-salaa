@@ -12,10 +12,91 @@ its boot arguments contain a device serial number.
 | `salaa-live.dtb` | 227,519 bytes | `0974ca677db2aaf3010b602d37cc123f33860a1d75e9f1fed735178f72e739ec` | Live Android DTB; analyzed locally, not published |
 | `edk2_backup_20261026_183727.tar.gz` | 281,885,686 bytes | `5621aa51e029c58e19092a391d44e64cd6df502bef31cfc7738fb9fe363f1ee5` | Generic `edk2/` tree, not a Mu-Silicium workspace; MD5 `05239c223c43e06bc92ef90eef12b0ed` |
 
+The 2026-11-02 file named `SALAA_F11_mainline_inputs.tar` was identified as a
+ZIP archive by its file signature. Its SHA-256 matches the F.11 ZIP already
+listed above. The archive contains only a markdown manifest, `build.prop`, two
+scatter descriptions, one base DTB, and three DTBOs; it contains no OFP, boot
+partition image, ramdisk, `lk.bin`, or `lk2.bin`. No full OFP extraction was
+performed.
+
 The F.11 manifest identifies RMX2151L1 / RM6785 / MT6785 and firmware
 `RMX2151_11.F.11_3110_202211171630` (Android 12, vendor Linux 4.14.186).
 This is the supplied firmware package identity; the live handset reports a
 different build fingerprint below.
+
+The bundled `metadata/build.prop` independently identifies stock F.11 as
+`RMX2151_11_F.11` / Android 12, model `RMX2151`, with
+`ro.build.fingerprint=realme/RMX2151/RMX2151L1:12/SP1A.210812.016/Q.bf75e7-1:user/release-keys`.
+This is static stock-firmware identity available from the supplied bundle;
+it does not identify the currently booted custom ROM. The separate live
+Termux snapshot reports another Realme fingerprint, and `commands-info.txt`
+reports that same Android 12 fingerprint despite the owner's current-ROM
+description of Android 16 QPR2. That discrepancy does not require another
+fingerprint request for the UEFI work.
+
+### Selective F.11 boot-chain inspection — 2026-11-02
+
+The Ubuntu data volume contains the 10,546,675,416-byte
+`RMX2151_F11.ofp` and an existing `selected_f11/` extraction. This turn did
+not decrypt or extract the whole OFP. We inspected the already-extracted
+boot-chain files only. The 33,554,432-byte `boot.img` SHA-256 is
+`27227c7345e412998ec7394dd37646adc5da8614f71d5653f747840fcdcc57c5`, exactly
+matching the supplied manifest. AOSP `unpack_bootimg.py` from
+`platform/system/tools/mkbootimg` commit
+`d2bb0af5ba6d3198a3e99529c97eda1be0b5a093` (script SHA-256
+`a9d260978a63bd06a24b6347e7dee8a28ff96639793caea15dff6aa491316308`) parsed
+the actual binary as Android boot header v2, page size 2048, kernel size
+15,662,146 at `0x40080000`, ramdisk size 1,434,484 at `0x47c80000`, and DTB
+size 141,677 at `0x4bc80000`; the command line is
+`bootopt=64S3,32N2,64N2 buildvariant=user`. The extracted `dtb`, `kernel`, and
+`ramdisk` hashes are respectively
+`ddcb4f21c19f203b36547b5f0e5663399361f954fb884114c39c775db68b9ccc`,
+`c3ebf513d0ab3e29d5ac9a3fc17b486a85fe6a4510307395ee6d734b20d1fb89`, and
+`2f8306faaf3c73851b31fe9c6e71c4cb6fb290f316165bbb91a6a48a4a5d5ba4`.
+
+The same extraction has `lk.img` and `lk2.img` (each 1,387,824 bytes, equal
+SHA-256 `d532ce63f1fefb02b39a5f32048d7d2b67af5cc17d7b8d4424beed6b4cf58ca0`),
+plus the 375,120-byte preloader. These boot-chain binaries are not committed
+or released. The LK images are not needed to assemble a temporary Android
+boot image and must not be patched or flashed as part of this effort. The
+running phone is now on a custom Android 16 QPR2 ROM; these F.11 files are
+stock-package references, not proof that its current `boot` partition is
+identical.
+
+As a cross-check, the supplied device-tree repository's public
+[`lineage-23.2/BoardConfig.mk`](https://github.com/elohim-etz/android_device_realme_RM6785/blob/lineage-23.2/BoardConfig.mk)
+sets header v2, 2048-byte pages, kernel base `0x40078000` plus offset
+`0x8000` (effective `0x40080000`), ramdisk offset `0x07c08000`, and DTB/tags
+offset `0x0bc08000`. This corroborates the parsed F.11 header layout for that
+Android build configuration; it does not verify that the phone's current
+custom-ROM boot partition is identical.
+
+The existing UEFI FD and BootShim are not themselves an Android boot image.
+HakiOS's upstream `mkxnuimg.py` describes the fastboot kernel payload as
+`gzip(BootShim + UEFI FD + optional XNUP) + DTB` and calls `fastboot boot`;
+its checked-in defaults target Redwood (2 MiB FD at `0x9FD00000`, Android
+header v1), so those device values cannot be reused for SALAA. The SALAA
+packer preserves the matching F.11 Android v2 wrapper, ramdisk, and separate
+DTB, replacing only the kernel with `gzip(BootShim + 4 MiB vanilla SALAA FD)`.
+The hosted UEFI-entry output is published at
+[`v0.7.0-bootimg.41512150665`](https://github.com/iSciFiLite/rmx2151-salaa-uefi/releases/tag/v0.7.0-bootimg.41512150665)
+(1,951,744 bytes; SHA-256
+`59a416bb6e99884ee1401f0cd20d3e5440bfc31a6e8fcc72eef169a4241b75d3`). It
+contains no XNUP/XNU payload and uses the vanilla FD; it is a diagnostic, not
+the intended HakiOS/XNU image. The F.11 input is held in a draft-only GitHub
+release asset and downloaded by Actions with the repository token; it is not
+in Git or a public input release. A separate hosted workflow now builds the
+pinned MT6785 SALAA XNU kernel and open `hello` ramdisk, packages them as XNUP,
+and combines that with the matching HakiOS SALAA FD + BootShim. Hosted run
+`41517036914` was the first pinned-toolchain candidate; it exposed a release
+shell continuation defect after uploading the main assets. The fix was applied,
+and clean end-to-end run `41520513335` passed both build and package jobs. Its
+image, XNUP, kernel, ramdisk, toolchain hash, verification, and provenance are
+released at
+[`v0.7.1-hakios-xnu.41520513335`](https://github.com/iSciFiLite/rmx2151-salaa-uefi/releases/tag/v0.7.1-hakios-xnu.41520513335).
+The complete release was downloaded and every item in `SHA256SUMS` verified.
+Either image is for `fastboot boot` testing only, not a flashable `boot`
+partition image. LK modification is neither required nor planned.
 
 ## Current handset evidence
 
@@ -37,6 +118,45 @@ The fingerprint names RMX2156T2/RMX2156L1 while `ro.product.model` says
 RMX2151L1. Keep the profile restricted to this observed hardware until the
 regional/model relationship is confirmed; do not assume it covers every
 SALAA/Narzo 20 Pro variant.
+
+### Framebuffer, kernel log, and partition aliases — owner output, 2026-11-02
+
+The owner ran these root Termux queries:
+
+```sh
+su -c 'for f in name bits_per_pixel line_length virtual_size smem_start smem_len format; do printf "%s=" "$f"; cat "/sys/class/graphics/fb0/$f" 2>/dev/null; done; find /sys/class/graphics/fb0 -maxdepth 1 -type f -printf "%f\n" 2>/dev/null | sort'
+su -c 'dmesg 2>/dev/null | grep -Ei "ufshci|ufs phy|ufs|mtkfb|framebuffer|fb0|td4330|nt36672c" | tail -100'
+su -c 'find /dev/block/by-name -maxdepth 1 -type l -printf "%f -> %l\n" 2>/dev/null | grep -Ei "xbl|lk|boot|dtbo|log|ufs"'
+```
+
+Reported results: framebuffer name `mtkfb`, 32 bits per pixel, virtual size
+`1088,9600`; no values were printed for `line_length`, `smem_start`,
+`smem_len`, or `format`. The filtered `dmesg` query printed no matching
+lines. The by-name links shown were `dtbo -> /dev/block/sdc45`,
+`lk2 -> /dev/block/sdc42`, `boot_para -> /dev/block/sdc28`,
+`lk -> /dev/block/sdc41`, `logo -> /dev/block/sdc44`, and
+`boot -> /dev/block/sdc43`. These are observations from the running ROM,
+not proof of the UEFI boot contract, UFS LUN mapping, or permission to write
+those partitions. The combined `printf` output has no newline between fields,
+which explains why empty fields run together in the pasted terminal output.
+
+### Sanitized follow-up snapshot — owner attachment, 2026-11-02
+
+The owner supplied `commands-info.txt` (262,449 bytes). The raw file is not
+committed because its pstore boot command line contains the handset serial.
+Only relevant, sanitized results are retained:
+
+| Read-only source | Reported result | What it establishes / does not establish |
+|---|---|---|
+| Android properties | `RMX2151L1`; fingerprint `realme/RMX2156T2/RMX2156L1:12/...`; `ro.boot.flash.locked=1`; `ro.boot.vbmeta.device_state=locked`; `ro.boot.verifiedbootstate=green`; `ro.bootmode=normal` | Identifies the handset properties in this snapshot. The fingerprint says Android 12 while the owner describes the currently used ROM as Android 16 QPR2 Pixel-based; this mismatch is unresolved and properties can be inherited or overridden by a ROM. Do not infer bootloader state from these properties alone. |
+| `/sys/class/scsi_host/host0/proc_name` | `ufshcd` | Android's kernel exposes a UFS host. It is not evidence that the UEFI Block I/O driver works. |
+| pstore `console-ramoops` display log | Framebuffer PA start `0x75d30000`, end `0x789fffff` (inclusive) | Matches the previously decoded `0x02cd0000` allocation size and corroborates the Linux-side reservation. Does not prove GOP pixel format, scanout after handoff, or framebuffer lifetime. |
+| pstore UFS log | MTK UFSHCI at `0x11270000`; link changes from gear 1 slow-auto to gear 3 fast mode, one lane each direction, rate 2; Samsung `KM8V8001JM-B813`; direct-access SCSI LUNs 0 and 1 appear | Confirms the Android vendor kernel initialized this physical UFS device and enumerated media. It supplies reference behavior for a future UEFI driver; it does not implement or validate UEFI UFS PHY/link/transfer support. |
+
+The snapshot's `flash.locked=1` and `vbmeta.device_state=locked` make the
+fastboot preflight especially important. Confirm the bootloader state from
+the external fastboot host before considering a RAM boot. No flash command
+is authorized or needed.
 
 The supplied `/proc/iomem` exposes these discontiguous System RAM intervals:
 
@@ -277,17 +397,22 @@ ufs_mphy@11fa0000 {
 };
 ```
 
-The UFS Block I/O driver at
-`Silicon/MediaTek/MT6785Pkg/Drivers/UfsBlockIoDxe/` performs a live MMIO probe of
-the MT6785 UFSHCI controller at `0x11270000` (probing VER at 0x08, HCE at 0x34,
-HCS at 0x30, CAP at 0x00, and MTK_HW_VER at 0x2240). When LK leaves the controller
-enabled during bootloader handoff, it detects media presence and exposes 8 LUN
-Block I/O protocol handles with a 4096-byte logical block size for partition
-enumeration and HakiOS XnuLoader persistence.
+The probe-only UFS stub at
+`Silicon/MediaTek/MT6785Pkg/Drivers/UfsBlockIoDxe/` samples VER at 0x08, HCE at
+0x34, HCS at 0x30, CAP at 0x00, and MTK_HW_VER at 0x2240. The JEDEC/Arm/Linux
+UFSHCI mapping is `DP=HCS[0]`, `UTRLRDY=HCS[1]`, `UTMRLRDY=HCS[2]`, and
+`UCRDY=HCS[3]`; older project documentation incorrectly assigned UCRDY to bit
+0 and has been corrected. The probe now reports these states separately but
+does not use DP alone to claim a LUN is usable. Optional Block I/O handles
+still report no media; reads return `EFI_NO_MEDIA`. There is no UFS link
+initialization, LUN discovery, capacity discovery, or block transfer.
+Partition enumeration and XnuLoader persistence remain unsupported.
+The bit mapping follows the [Arm Trusted Firmware UFS register definitions](https://github.com/ARM-software/arm-trusted-firmware/blob/master/include/drivers/ufs.h)
+and the upstream [Linux UFS host-controller implementation](https://github.com/torvalds/linux/blob/master/drivers/ufs/core/ufshcd.c).
 
 ### Live GOP Framebuffer Hardware Evidence (`atag,videolfb`)
 
-Extracted and verified from the phone's live device tree (`/home/ubuntu/salaa-live.dtb`)
+Extracted and verified from the phone's live device tree (the owner-provided live DTB)
 node `/chosen/atag,videolfb`:
 
 - **Physical Framebuffer Base (`fb_base`)**: `0x75d30000`
@@ -301,3 +426,9 @@ This proves that the physical framebuffer memory is mapped at `0x75d30000`–`0x
 which exactly aligns with the `Display Reserved` descriptor in `MemoryMapLib.c`.
 The `PcdFrameBufferBase` and `PcdFrameBufferSize` PCDs in `SalaaPkg.dec` / `SalaaPkg.dsc`
 now lock in this exact address.
+
+The SALAA SimpleFb override reports the complete `0x02cd0000` reserved range
+as GOP `FrameBufferSize`; GOP mode information remains the visible
+1080×2400 surface with 1088 pixels per scan line. This matches the Linux
+allocation evidence without claiming that GOP scanout, pixel order, or
+post-handoff display lifetime has been tested on the phone.

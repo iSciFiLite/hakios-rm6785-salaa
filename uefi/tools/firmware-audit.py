@@ -63,10 +63,34 @@ required_files = (
     "tools/verify-hakios-integration.py",
     "integrations/hakios/lock.env",
     ".github/workflows/hakios-uefi-build.yml",
+    ".github/workflows/salaa-bootimg-build.yml",
+    ".github/workflows/salaa-hakios-xnu-build.yml",
+    "tools/pack-salaa-bootimg.py",
 )
 for relative in required_files:
     if not (ROOT / relative).is_file():
         raise SystemExit(f"Required SALAA build input is missing: {relative}")
+
+# Guard hardware details that were corrected from the owner-supplied pstore
+# evidence and the standard UFSHCI status-register definition.
+ufs_source = (ROOT / "source/Silicon/MediaTek/MT6785Pkg/Drivers/UfsBlockIoDxe/UfsBlockIoDxe.c").read_text()
+for marker in (
+    "#define HCS_DP                     BIT0",
+    "#define HCS_UTRLRDY                BIT1",
+    "#define HCS_UTMRLRDY               BIT2",
+    "#define HCS_UCRDY                  BIT3",
+    "((Hcs & HCS_DP) != 0)",
+    "((Hcs & HCS_UCRDY) != 0)",
+):
+    if marker not in ufs_source:
+        raise SystemExit(f"UFSHCI probe is missing the verified status-bit mapping: {marker}")
+if "HCS bit 0 is UCRDY" in ufs_source:
+    raise SystemExit("UFSHCI status bit 0 must not be labeled UCRDY")
+
+gop_source = (ROOT / "source/Silicon/Silicium/SiliciumPkg/Drivers/SimpleFbDxe/SimpleFb.c").read_text()
+for marker in ("*FrameBufferSize = FrameBufferRegion.Length;", "mFrameBuffer.Mode->FrameBufferSize = FrameBufferSize;"):
+    if marker not in gop_source:
+        raise SystemExit(f"SALAA GOP is not preserving its measured framebuffer allocation: {marker}")
 
 workflow = (ROOT / ".github/workflows/edk2-build.yml").read_text()
 if "4bd8ae83bf37de41777f19e0777db70f59383a6d" not in workflow:
@@ -83,6 +107,29 @@ for pin in (
         raise SystemExit(f"The hosted HakiOS build is missing reviewed source pin: {pin}")
 if "make -C mu/BootShim" not in hakios_workflow:
     raise SystemExit("The hosted HakiOS workflow does not build the SALAA BootShim")
+
+bootimg_workflow = (ROOT / ".github/workflows/salaa-bootimg-build.yml").read_text()
+for marker in (
+    "27227c7345e412998ec7394dd37646adc5da8614f71d5653f747840fcdcc57c5",
+    "untagged-3597467fa853612dd205",
+    "v0.6.1-vanilla.fd5785f",
+    "v0.3.0-hakios.8e6cf0d",
+    "fastboot boot SALAA_UEFI_BOOT.img",
+):
+    if marker not in bootimg_workflow:
+        raise SystemExit(f"The SALAA boot-image workflow is missing verified setting: {marker}")
+
+xnu_workflow = (ROOT / ".github/workflows/salaa-hakios-xnu-build.yml").read_text()
+for marker in (
+    "iSciFiLite/hakios-mt6785",
+    "f50d914",
+    "kernel=hakios-kernel ramdisk=userland/hello",
+    "SALAA_XNUP.bin",
+    "v0.3.0-hakios.8e6cf0d",
+    "fastboot boot",
+):
+    if marker not in xnu_workflow:
+        raise SystemExit(f"The SALAA HakiOS/XNU workflow is missing required input or safety marker: {marker}")
 
 memory_audit = subprocess.run(
     ["python3", str(ROOT / "tools/audit-memory-map.py")],
@@ -134,7 +181,7 @@ report = "\n".join((
     "",
     "This audit is not an EDK II build or hardware test. The separate pinned Mu-Silicium workflow compiles the firmware and checks the generated FD structure.",
     "",
-    "Still requiring device evidence: exact LK FD load/entry contract, the omitted inverted System RAM interval, GOP stride/pixel format, UART setup, UFS host/PHY/Block I/O, and actual boot/recovery behavior.",
+    "Still requiring device evidence: exact LK FD load/entry contract, the omitted inverted System RAM interval, GOP scanout/pixel format, UART setup, UFS host/PHY/Block I/O, and actual boot/recovery behavior.",
     "",
 ))
 summary = os.environ.get("GITHUB_STEP_SUMMARY")
