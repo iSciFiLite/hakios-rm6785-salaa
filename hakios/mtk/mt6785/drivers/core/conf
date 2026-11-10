@@ -1,0 +1,8 @@
+# mtk/mt6785/drivers/core/conf: MediaTek MT6785 SoC identification and thermals.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel (docs/drivers-config.md).
+
+driver MTK6785_SOCINFO
+	file    bsd/dev/hakios.mtk6785_socinfo.c
+	default n
+	help    MediaTek MT6785 (Helio G95/G90T) hardware identification (socinfo=1) and AUXADC/LVTS thermal monitoring
+	help    (thermal=1) exposed via sysctl kern.hakios.soc_* and kern.hakios.thermal_*

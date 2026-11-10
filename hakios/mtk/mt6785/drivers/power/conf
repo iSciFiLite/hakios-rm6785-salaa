@@ -1,0 +1,8 @@
+# mtk/mt6785/drivers/power/conf: MT6785 PMIC, PWRAP, and battery subsystem.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel (docs/drivers-config.md).
+
+driver MTK6785_PMIC
+	file    bsd/dev/hakios.mtk6785_pmic.c
+	default n
+	help    the MT6359 PMIC via PWRAP at 0x1000D000 (pmic=1, battery=1): ADC fuel gauge readings (voltage, current,
+	help    temperature, capacity) reporting into HakiosBattery IOPMPowerSource

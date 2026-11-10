@@ -1,0 +1,8 @@
+# mtk/mt6785/drivers/wifi/conf: MT6785 CONNSYS wireless subsystem.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel (docs/drivers-config.md).
+
+driver MTK6785_CONNSYS
+	file    bsd/dev/hakios.mtk6785_connsys.c
+	default n
+	help    the MT6785 CONNSYS subsystem (Wi-Fi 802.11ac and Bluetooth 5.0 MT6631/MT6635 radio, consys_step=N):
+	help    SPM TOP1 power domain, MCU initialization, BTIF and STP/WMT command interface

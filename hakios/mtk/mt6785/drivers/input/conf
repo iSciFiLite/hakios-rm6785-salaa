@@ -1,0 +1,14 @@
+# mtk/mt6785/drivers/input/conf: MT6785 buttons, keypad, CPU clocks, and touch screen.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel (docs/drivers-config.md).
+
+driver MTK6785_KEYS
+	file    bsd/dev/hakios.mtk6785_keys.c
+	default n
+	help    the MT6785 power and volume keys: GPIO110 volume-up, MT6359 PMIC wrapper power and volume-down (buttons=2),
+	help    and dynamic frequency scaling for Cortex-A55 and Cortex-A76 CPU clusters (mtk_cpufreq=1|2)
+
+driver NT36672C
+	file    bsd/dev/hakios.nt36672c.c
+	default n
+	help    the Novatek NT36672C 1080x2400 touch screen on MT6785 (touchscreen=2): coordinate normalization and
+	help    multi-touch event reporting into /dev/hakios-touch

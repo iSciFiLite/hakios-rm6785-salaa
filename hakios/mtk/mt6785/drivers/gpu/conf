@@ -1,0 +1,9 @@
+# mtk/mt6785/drivers/gpu/conf: MT6785 ARM Mali-G76 MC4 GPU.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel (docs/drivers-config.md).
+
+driver MTK6785_MALI
+	file    bsd/dev/hakios.mtk6785_mali.c
+	file    iokit/Kernel/hakios.mtk6785_mali.cpp iokitcpp
+	default n
+	help    the Mali-G76 MC4 (Bifrost v7, 4 cores) brought up from the kernel (mali=1): 4-core power domains,
+	help    TOPCKGEN clocks, MMU page tables, and HakiosMali Panfrost DRM service for Mesa and window server
